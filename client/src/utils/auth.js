@@ -3,17 +3,20 @@ export const setToken    = (t) => localStorage.setItem('mc_token', t);
 export const removeToken = () => localStorage.removeItem('mc_token');
 export const isAuthenticated = () => !!getToken();
 
-export function authHeaders() {
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
-}
-
-export function getUserRole() {
+export function getUser() {
   const token = getToken();
   if (!token) return null;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.role || null;
+    return JSON.parse(atob(token.split('.')[1]));
   } catch {
     return null;
   }
+}
+
+export function getUserRole() {
+  return getUser()?.role || null;
+}
+
+export function authHeaders() {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` };
 }

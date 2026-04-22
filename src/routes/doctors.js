@@ -1,11 +1,14 @@
-const express = require('express');
-const router = express.Router();
+const express    = require('express');
+const router     = express.Router();
 const controller = require('../controllers/doctorsController');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
-router.get('/',       controller.getAllDoctors);
-router.get('/:id',    controller.getDoctorById);
-router.post('/',      controller.createDoctor);
-router.put('/:id',    controller.updateDoctor);
-router.delete('/:id', controller.deleteDoctor);
+// Patient: browse doctors
+router.get('/',          requireAuth, requireRole('patient'), controller.getAllDoctors);
+router.get('/available', requireAuth, requireRole('patient'), controller.getAvailableDoctors);
+
+// Doctor: manage own profile & availability
+router.get('/me',   requireAuth, requireRole('doctor'), controller.getMyProfile);
+router.patch('/me', requireAuth, requireRole('doctor'), controller.updateMyProfile);
 
 module.exports = router;

@@ -1,7 +1,9 @@
 const variants = {
-  scheduled: { background: 'rgba(14,165,233,0.15)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.3)' },
-  completed: { background: 'rgba(20,184,166,0.15)', color: '#2dd4bf', border: '1px solid rgba(20,184,166,0.3)' },
-  cancelled: { background: 'rgba(244,63,94,0.15)',  color: '#fb7185', border: '1px solid rgba(244,63,94,0.3)' },
+  pending:   { background: 'rgba(234,179,8,0.15)',  color: '#fbbf24', border: '1px solid rgba(234,179,8,0.3)' },
+  approved:  { background: 'rgba(20,184,166,0.15)', color: '#2dd4bf', border: '1px solid rgba(20,184,166,0.3)' },
+  rejected:  { background: 'rgba(244,63,94,0.15)',  color: '#fb7185', border: '1px solid rgba(244,63,94,0.3)' },
+  available: { background: 'rgba(20,184,166,0.15)', color: '#2dd4bf', border: '1px solid rgba(20,184,166,0.3)' },
+  busy:      { background: 'rgba(244,63,94,0.15)',  color: '#fb7185', border: '1px solid rgba(244,63,94,0.3)' },
   default:   { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.12)' },
 };
 

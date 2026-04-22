@@ -1,50 +1,32 @@
 import { authHeaders } from '../utils/auth';
 
-const BASE = '/api/doctors';
-
 export async function getAllDoctors() {
-  const res = await fetch(BASE, { headers: authHeaders() });
+  const res = await fetch('/api/doctors', { headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to fetch doctors');
   return res.json();
 }
 
-export async function getDoctorById(id) {
-  const res = await fetch(`${BASE}/${id}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Doctor not found');
+export async function getAvailableDoctors() {
+  const res = await fetch('/api/doctors/available', { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch available doctors');
   return res.json();
 }
 
-export async function createDoctor(data) {
-  const res = await fetch(BASE, {
-    method: 'POST',
+export async function getMyDoctorProfile() {
+  const res = await fetch('/api/doctors/me', { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch doctor profile');
+  return res.json();
+}
+
+export async function updateDoctorProfile(data) {
+  const res = await fetch('/api/doctors/me', {
+    method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify(data),
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error || 'Failed to create doctor');
-  }
-  return res.json();
-}
-
-export async function updateDoctor(id, data) {
-  const res = await fetch(`${BASE}/${id}`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || 'Failed to update doctor');
-  }
-  return res.json();
-}
-
-export async function removeDoctor(id) {
-  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE', headers: authHeaders() });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || 'Failed to delete doctor');
+    throw new Error(err.error || 'Failed to update profile');
   }
   return res.json();
 }

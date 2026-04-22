@@ -1,50 +1,39 @@
 import { authHeaders } from '../utils/auth';
 
-const BASE = '/api/appointments';
-
-export async function getAllAppointments() {
-  const res = await fetch(BASE, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch appointments');
-  return res.json();
-}
-
-export async function getAppointmentById(id) {
-  const res = await fetch(`${BASE}/${id}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Appointment not found');
-  return res.json();
-}
-
-export async function createAppointment(data) {
-  const res = await fetch(BASE, {
+export async function bookAppointment(data) {
+  const res = await fetch('/api/appointments', {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(data),
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error || 'Failed to create appointment');
+    throw new Error(err.error || 'Failed to book appointment');
   }
   return res.json();
 }
 
-export async function updateAppointment(id, data) {
-  const res = await fetch(`${BASE}/${id}`, {
-    method: 'PUT',
+export async function getMyAppointments() {
+  const res = await fetch('/api/appointments/mine', { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch appointments');
+  return res.json();
+}
+
+export async function getAppointmentRequests() {
+  const res = await fetch('/api/appointments/requests', { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch requests');
+  return res.json();
+}
+
+export async function updateAppointmentStatus(id, status) {
+  const res = await fetch(`/api/appointments/${id}/status`, {
+    method: 'PATCH',
     headers: authHeaders(),
-    body: JSON.stringify(data),
+    body: JSON.stringify({ status }),
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error || 'Failed to update appointment');
-  }
-  return res.json();
-}
-
-export async function removeAppointment(id) {
-  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE', headers: authHeaders() });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || 'Failed to delete appointment');
+    throw new Error(err.error || 'Failed to update status');
   }
   return res.json();
 }
