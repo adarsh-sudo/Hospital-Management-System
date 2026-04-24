@@ -1,7 +1,7 @@
 # Skill: Backend Architecture
 
 ## Purpose
-Guide all structural and architectural decisions for the Node.js + Express backend.
+Guide all structural and architectural decisions for the MediCore Express backend.
 
 ---
 
@@ -9,68 +9,99 @@ Guide all structural and architectural decisions for the Node.js + Express backe
 
 ```
 src/
-  routes/         → route definitions only (no logic)
-  controllers/    → request/response handling
-  db/             → raw SQL query functions
+  routes/         → route definitions + middleware wiring
+  controllers/    → request handling, calls db layer
+  db/             → raw SQL query functions (one file per domain)
+  middleware/
+    auth.js       → requireAuth, requireRole
   config/
-    db.js         → PostgreSQL pool setup
-  middlewares/    → auth, error handling, validation
+    db.js         → PostgreSQL pool
 sql/
   schema.sql      → all table definitions
-server.js         → entry point
+  seed.js         → dummy data script
+server.js         → entry point, mounts routes
 ```
+
+---
+
+## Route Groups (server.js)
+
+```js
+app.use('/api/auth',         require('./src/routes/auth'));
+app.use('/api/doctors',      require('./src/routes/doctors'));
+app.use('/api/appointments', require('./src/routes/appointments'));
+app.use('/api/patients',     require('./src/routes/patients'));
+```
+
+Public: `/api/auth` only. All other routes require JWT via `requireAuth`.
+
+---
+
+## Auth Middleware (`src/middleware/auth.js`)
+
+```js
+function requireAuth(req, res, next)       // verifies JWT, sets req.user
+function requireRole(role)                 // checks req.user.role === role
+```
+
+`req.user` shape after `requireAuth`:
+```js
+{ id, email, name, role, profile_id }
+// profile_id → patients.id or doctors.id depending on role
+```
+
+`profile_id` is embedded in the JWT at registration/login — no extra DB lookup needed in controllers.
 
 ---
 
 ## Layer Responsibilities
 
 ### Routes (`src/routes/`)
-- Register endpoints and map to controllers
-- Apply middleware (auth, validation) at route level
+- Register endpoints, attach middleware, map to controller functions
 - No business logic, no SQL
 
 ```js
-// Good
-router.post('/appointments', authenticate, appointmentController.create);
-
-// Bad — logic inside route
-router.post('/appointments', async (req, res) => {
-  const result = await pool.query('INSERT INTO ...');
-});
+router.get('/me',   requireAuth, requireRole('doctor'), ctrl.getMyProfile);
+router.patch('/me', requireAuth, requireRole('doctor'), ctrl.updateMyProfile);
 ```
 
 ### Controllers (`src/controllers/`)
-- Parse and validate `req.body` / `req.params` / `req.query`
-- Call DB query functions — never write SQL here
-- Format and send the response
-- Catch and forward errors via `next(err)`
+- Validate `req.body` / `req.params` inline at the top
+- Call db functions — never write SQL here
+- Send the response directly (no envelope wrapper)
 
 ```js
-async function create(req, res, next) {
-  try {
-    const { patient_id, doctor_id, scheduled_at } = req.body;
-    const appointment = await appointmentQueries.create({ patient_id, doctor_id, scheduled_at });
-    res.status(201).json({ data: appointment });
-  } catch (err) {
-    next(err);
-  }
+async function bookAppointment(req, res) {
+  const { doctor_id, slot_label, slot_time } = req.body;
+  if (!doctor_id || !slot_label || !slot_time)
+    return res.status(400).json({ error: 'Missing required fields' });
+  const appt = await appointmentsDb.createAppointment({ ... });
+  res.status(201).json(appt);
 }
 ```
 
 ### DB Layer (`src/db/`)
-- One file per domain (e.g., `appointments.js`, `patients.js`)
-- Export named async functions that run raw SQL via the pool
-- No Express objects (`req`, `res`) allowed here
+- Files: `users.js`, `patients.js`, `doctors.js`, `appointments.js`
+- Export named async functions only
+- No `req` / `res` — pure SQL in, plain JS out
+
+---
+
+## Transactions
+
+Use `pool.connect()` when multiple writes must be atomic (e.g., registration):
 
 ```js
-// src/db/appointments.js
-async function create({ patient_id, doctor_id, scheduled_at }) {
-  const { rows } = await pool.query(
-    `INSERT INTO appointments (patient_id, doctor_id, scheduled_at)
-     VALUES ($1, $2, $3) RETURNING *`,
-    [patient_id, doctor_id, scheduled_at]
-  );
-  return rows[0];
+const client = await pool.connect();
+try {
+  await client.query('BEGIN');
+  // insert user + insert patient/doctor profile
+  await client.query('COMMIT');
+} catch (err) {
+  await client.query('ROLLBACK');
+  throw err;
+} finally {
+  client.release();
 }
 ```
 
@@ -78,11 +109,11 @@ async function create({ patient_id, doctor_id, scheduled_at }) {
 
 ## Naming Conventions
 
-| Layer       | File pattern          | Example                  |
-|-------------|-----------------------|--------------------------|
-| Routes      | `<domain>.routes.js`  | `appointments.routes.js` |
-| Controllers | `<domain>.js`         | `appointments.js`        |
-| DB queries  | `<domain>.js`         | `appointments.js`        |
+| Layer       | File              | Example                      |
+|-------------|-------------------|------------------------------|
+| Routes      | `<domain>.js`     | `src/routes/appointments.js` |
+| Controllers | `<domain>Controller.js` | `src/controllers/appointmentsController.js` |
+| DB queries  | `<domain>.js`     | `src/db/appointments.js`     |
 
 - Functions: `camelCase`
 - DB columns / SQL: `snake_case`
@@ -90,32 +121,9 @@ async function create({ patient_id, doctor_id, scheduled_at }) {
 
 ---
 
-## Server Entry Point (`server.js`)
-
-```js
-const express = require('express');
-const app = express();
-
-app.use(express.json());
-
-// Routes
-app.use('/api/patients',      require('./src/routes/patients.routes'));
-app.use('/api/doctors',       require('./src/routes/doctors.routes'));
-app.use('/api/appointments',  require('./src/routes/appointments.routes'));
-
-// Global error handler — must be last
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
-});
-
-app.listen(process.env.PORT || 3000);
-```
-
----
-
 ## Rules
-- Never skip a layer (e.g., SQL directly in a route)
-- Never mix domain logic across layers
-- Always use `next(err)` for error propagation — no `res.status(500)` inline
+
+- Never write SQL in a controller — delegate to `src/db/`
+- Never skip `requireAuth` on protected routes
+- Use `profile_id` from `req.user` (not a separate DB lookup) to identify the caller's patient/doctor row
 - All new files require explicit user approval before creation

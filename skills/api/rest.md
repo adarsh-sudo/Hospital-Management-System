@@ -1,128 +1,126 @@
 # Skill: REST API Design
 
 ## Purpose
-Define consistent standards for API structure, naming, responses, and error handling.
+Document all API endpoints, conventions, and response shapes for MediCore.
 
 ---
 
-## URL Design
+## Endpoint Reference
 
-### Resource Naming
-- Plural nouns for collections: `/patients`, `/doctors`, `/appointments`
-- Nested routes for owned sub-resources (max 1 level deep)
-
+### Auth (public)
 ```
-GET    /patients                    → list all patients
-POST   /patients                    → create a patient
-GET    /patients/:id                → get one patient
-PATCH  /patients/:id                → partial update
-DELETE /patients/:id                → delete
-
-GET    /appointments/:id/records    → records for an appointment
-POST   /appointments/:id/records    → add a record to an appointment
+POST /api/auth/register   → { token, user }
+POST /api/auth/login      → { token, user }
 ```
 
-### Avoid
-- Verbs in URLs: ❌ `/createPatient`, `/getDoctor`
-- Deep nesting: ❌ `/patients/:id/appointments/:apptId/records/:recId`
-  - Flatten to: ✅ `/records/:id`
+### Doctors
+```
+GET    /api/doctors            [patient]  → array of all doctors with slots
+GET    /api/doctors/available  [patient]  → array of available doctors only
+GET    /api/doctors/me         [doctor]   → own profile + slots
+PATCH  /api/doctors/me         [doctor]   → update profile, availability, slots
+```
 
----
+### Appointments
+```
+POST   /api/appointments              [patient] → create booking
+GET    /api/appointments/mine         [patient] → patient's own bookings
+GET    /api/appointments/requests     [doctor]  → appointments for this doctor
+PATCH  /api/appointments/:id/status   [doctor]  → approve or reject
+```
 
-## HTTP Methods
+### Patients
+```
+GET    /api/patients/me   [patient]  → own profile
+PATCH  /api/patients/me   [patient]  → update profile
+```
 
-| Method | Use case                          | Success status |
-|--------|-----------------------------------|----------------|
-| GET    | Read resource(s)                  | 200            |
-| POST   | Create a new resource             | 201            |
-| PATCH  | Partial update                    | 200            |
-| PUT    | Full replacement (use sparingly)  | 200            |
-| DELETE | Remove resource                   | 200 or 204     |
+Role labels `[patient]` / `[doctor]` mean the route requires `requireAuth` + `requireRole('patient'|'doctor')`.
 
 ---
 
 ## Response Shape
 
-Always return a consistent envelope:
+No envelope wrapper — return the data directly:
 
 ```json
-// Success (single)
-{
-  "data": { "id": 1, "name": "Jane Doe" }
-}
+// Success (single object)
+{ "id": 1, "name": "Rahul Gupta", "role": "patient", ... }
 
 // Success (list)
-{
-  "data": [ ... ],
-  "meta": { "total": 42, "page": 1, "limit": 20 }
-}
+[ { "id": 1, ... }, { "id": 2, ... } ]
+
+// Auth response
+{ "token": "<jwt>", "user": { "id": 1, "name": "...", "role": "patient", "profile_id": 3 } }
 
 // Error
-{
-  "error": "Patient not found",
-  "code": "NOT_FOUND"          // optional machine-readable code
-}
+{ "error": "Email already registered" }
 ```
 
 ---
 
-## Status Codes
+## HTTP Status Codes
 
 | Code | When to use                                        |
 |------|----------------------------------------------------|
-| 200  | Successful GET / PATCH / DELETE with body          |
+| 200  | Successful GET / PATCH                             |
 | 201  | Resource created (POST)                            |
-| 204  | Success, no content (DELETE with no body)          |
-| 400  | Bad request — missing/invalid fields               |
-| 401  | Unauthenticated                                    |
-| 403  | Authenticated but not authorized                   |
+| 400  | Missing or invalid fields                          |
+| 401  | No token or invalid token                          |
+| 403  | Authenticated but wrong role                       |
 | 404  | Resource not found                                 |
-| 409  | Conflict (duplicate, scheduling clash)             |
-| 422  | Validation passed structurally but failed logically|
+| 409  | Conflict (duplicate email)                         |
 | 500  | Unhandled server error                             |
 
 ---
 
-## Pagination
+## URL Conventions
 
-Use `limit` + `offset` for list endpoints.
-
-```
-GET /patients?limit=20&offset=0
-GET /appointments?limit=10&offset=30
-```
-
-Response:
-```json
-{
-  "data": [ ... ],
-  "meta": { "total": 120, "limit": 20, "offset": 0 }
-}
-```
-
-SQL pattern:
-```sql
-SELECT * FROM patients
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2;
-```
+- Plural nouns: `/doctors`, `/appointments`, `/patients`
+- `/me` for the authenticated user's own resource (no `:id` needed — identity from JWT)
+- Action sub-resources use nouns, not verbs: `/status` not `/approve`
 
 ---
 
-## Filtering & Sorting
+## Request Bodies
 
-```
-GET /appointments?doctor_id=3&status=scheduled
-GET /patients?sort=last_name&order=asc
+### POST /api/auth/register
+```json
+{ "name": "Rahul Gupta", "email": "rahul@mail.com", "password": "...", "role": "patient" }
 ```
 
-- Whitelist allowed filter/sort fields in the controller
-- Never interpolate query params directly into SQL — always use `$n` params
+### PATCH /api/doctors/me
+```json
+{
+  "specialization": "Cardiology",
+  "phone": "+91 98201 11001",
+  "is_available": true,
+  "available_slots": [
+    { "date": "2026-04-28", "start": "09:00", "end": "10:00" }
+  ]
+}
+```
+
+### POST /api/appointments
+```json
+{
+  "doctor_id": 2,
+  "slot_label": "Tue, Apr 28, 2026 · 09:00–10:00",
+  "slot_time":  "2026-04-28T09:00:00"
+}
+```
+
+### PATCH /api/appointments/:id/status
+```json
+{ "status": "approved" }   // or "rejected"
+```
 
 ---
 
 ## Rules
-- All routes registered in `src/routes/` — never inline in `server.js`
-- Always validate inputs before hitting the DB (see `api/validation.md`)
-- ID params must be parsed as integers and validated as positive numbers
+
+- All routes except `/api/auth` require `requireAuth` middleware
+- Role-specific routes require `requireRole('patient'|'doctor')` after `requireAuth`
+- Never interpolate query params directly into SQL — always use `$n` placeholders
 - Return 404 (not 500) when a record is not found
+- All new routes go in `src/routes/` — never inline in `server.js`

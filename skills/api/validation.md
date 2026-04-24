@@ -1,141 +1,120 @@
 # Skill: API Validation
 
 ## Purpose
-Define where, how, and what to validate for all incoming API requests.
+Define what to validate, where, and how for every incoming request in MediCore.
 
 ---
 
 ## Where Validation Happens
 
+Validation is done inline at the top of each controller function — no separate middleware validator.
+
 ```
-Request → Route middleware → Controller → DB layer
-              ↑
-         validate here
+Request → requireAuth → requireRole → Controller (validate here) → DB layer
 ```
 
-- **Structural validation** (required fields, types, formats) → middleware or top of controller
-- **Business validation** (doctor exists, slot free) → service layer
-- **Never** validate in the DB query layer
+- **Structural validation** (required fields, types) → top of controller
+- **Business validation** (doctor exists, slot belongs to this doctor) → controller before DB write
+- **Never** validate inside `src/db/` functions
 
 ---
 
-## Validation Middleware (recommended pattern)
-
-Use a simple hand-rolled validator or `express-validator`. 
-Below is the lightweight in-house approach aligned with raw SQL style:
+## Pattern
 
 ```js
-// src/middlewares/validate.js
-function validate(schema) {
-  return (req, res, next) => {
-    const errors = [];
+async function bookAppointment(req, res) {
+  const { doctor_id, slot_label, slot_time } = req.body;
 
-    for (const [field, rules] of Object.entries(schema)) {
-      const value = req.body[field];
+  if (!doctor_id || !slot_label || !slot_time)
+    return res.status(400).json({ error: 'Missing required fields' });
 
-      if (rules.required && (value === undefined || value === null || value === '')) {
-        errors.push(`${field} is required`);
-        continue;
-      }
-
-      if (value !== undefined) {
-        if (rules.type === 'integer' && !Number.isInteger(Number(value))) {
-          errors.push(`${field} must be an integer`);
-        }
-        if (rules.type === 'string' && typeof value !== 'string') {
-          errors.push(`${field} must be a string`);
-        }
-        if (rules.maxLength && value.length > rules.maxLength) {
-          errors.push(`${field} must be at most ${rules.maxLength} characters`);
-        }
-        if (rules.pattern && !rules.pattern.test(value)) {
-          errors.push(`${field} has an invalid format`);
-        }
-      }
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({ error: errors.join(', ') });
-    }
-
-    next();
-  };
+  // proceed to DB
 }
-
-module.exports = validate;
 ```
+
+Return on the first missing field — do not accumulate errors.
 
 ---
 
-## Using Validation in Routes
+## Field Rules by Endpoint
 
-```js
-// src/routes/appointments.routes.js
-const validate = require('../middlewares/validate');
+### POST /api/auth/register
+| Field      | Rule                                      |
+|------------|-------------------------------------------|
+| `name`     | Required, non-empty string                |
+| `email`    | Required, non-empty string                |
+| `password` | Required, non-empty string                |
+| `role`     | Required, must be `'patient'` or `'doctor'` |
 
-const appointmentSchema = {
-  patient_id:   { required: true,  type: 'integer' },
-  doctor_id:    { required: true,  type: 'integer' },
-  scheduled_at: { required: true,  type: 'string', pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/ },
-};
+### PATCH /api/doctors/me
+| Field             | Rule                                    |
+|-------------------|-----------------------------------------|
+| `is_available`    | Boolean                                 |
+| `specialization`  | Optional string                         |
+| `phone`           | Optional string                         |
+| `available_slots` | Array of `{ date, start, end }` objects |
 
-router.post('/', validate(appointmentSchema), appointmentController.create);
-```
+Each slot must have `date` (YYYY-MM-DD), `start` and `end` (HH:MM), and `end > start`.
+
+### POST /api/appointments
+| Field        | Rule                    |
+|--------------|-------------------------|
+| `doctor_id`  | Required, positive integer |
+| `slot_label` | Required, non-empty string |
+| `slot_time`  | Required, ISO datetime string |
+
+### PATCH /api/appointments/:id/status
+| Field    | Rule                                      |
+|----------|-------------------------------------------|
+| `status` | Required, must be `'approved'` or `'rejected'` |
 
 ---
 
 ## ID Parameter Validation
 
-Always validate `:id` params at the controller level:
+Always parse and check `:id` params before using them in a query:
 
 ```js
-function getById(req, res, next) {
-  const id = parseInt(req.params.id, 10);
-  if (!id || id < 1) {
-    return res.status(400).json({ error: 'Invalid ID' });
-  }
-  // proceed
-}
+const id = parseInt(req.params.id, 10);
+if (!id || id < 1) return res.status(400).json({ error: 'Invalid ID' });
 ```
 
 ---
 
-## Common Validation Rules
+## Identity from JWT — Not from Body
 
-| Field          | Rule                                         |
-|----------------|----------------------------------------------|
-| `patient_id`   | Required, positive integer                   |
-| `doctor_id`    | Required, positive integer                   |
-| `scheduled_at` | Required, ISO 8601 datetime string           |
-| `name`         | Required, string, max 100 chars              |
-| `phone`        | Optional, string, pattern `/^\+?[\d\s\-]+$/`|
-| `email`        | Optional, pattern `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` |
-| `diagnosis`    | Required for medical records, string, max 2000 |
+For `/me` routes, the caller's identity comes from `req.user`, not from the request body.
+
+```js
+// Good — use profile_id from the verified token
+const patient_id = req.user.profile_id;
+
+// Bad — trusting body for identity
+const patient_id = req.body.patient_id;
+```
 
 ---
 
 ## What NOT to Do
 
 ```js
-// Bad — trusting raw user input in SQL
-pool.query(`SELECT * FROM patients WHERE name = '${req.body.name}'`);
+// Bad — SQL injection risk
+pool.query(`SELECT * FROM doctors WHERE id = ${req.body.doctor_id}`);
 
-// Bad — validating inside DB layer
-async function create(data) {
-  if (!data.patient_id) throw new Error('Missing patient_id'); // too late
-}
+// Bad — wrong status code for missing fields
+return res.status(500).json({ error: 'doctor_id missing' });
 
-// Bad — generic 500 for missing fields
-if (!req.body.patient_id) {
-  return res.status(500).json({ error: 'Error' });
+// Bad — validating inside the DB layer
+async function createAppointment(data) {
+  if (!data.doctor_id) throw new Error('Missing doctor_id'); // too late
 }
 ```
 
 ---
 
 ## Rules
-- All inputs must be validated before any DB call
-- Never trust `req.body` types — always coerce/check explicitly
-- Return 400 for structural errors, not 422 or 500
-- Validation errors should list all invalid fields, not just the first
-- Query param filters must be whitelisted before use in SQL
+
+- Return `400` for missing/invalid fields, not `422` or `500`
+- Never trust `req.body` for the caller's identity — always use `req.user`
+- Always coerce `:id` params with `parseInt` before use in SQL
+- Never interpolate request data directly into SQL strings

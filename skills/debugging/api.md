@@ -1,128 +1,119 @@
 # Skill: API Debugging
 
 ## Purpose
-Systematic approach to diagnosing failures at the Express route and controller layer.
+Systematic approach to diagnosing failures at the Express route and controller layer in MediCore.
 
 ---
 
 ## Diagnosis Checklist
 
-When an API endpoint fails, work through this order:
-
 ```
-1. Check HTTP method and URL match the route definition
-2. Check request body / params are reaching the controller
-3. Check middleware (auth, validation) isn't blocking early
-4. Check the controller is calling the right function
-5. Check the service/DB response before it's sent
-6. Check the response shape matches what the client expects
+1. Check HTTP method and URL match the route definition (see api/rest.md)
+2. Check the Authorization header is present and valid
+3. Check req.body is populated (Content-Type: application/json required)
+4. Check middleware order — requireAuth runs before requireRole
+5. Check the controller is calling the correct db function
+6. Check the response shape matches what the client service expects
 ```
 
 ---
 
-## Logging Incoming Requests
+## Testing Endpoints with curl
 
-Add temporary debug middleware to inspect what's arriving:
+```bash
+# Register a patient
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test User","email":"test@mail.com","password":"password123","role":"patient"}'
+
+# Login
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@mail.com","password":"password123"}'
+
+# List all doctors (patient token required)
+curl http://localhost:5000/api/doctors \
+  -H "Authorization: Bearer <token>"
+
+# Book an appointment
+curl -X POST http://localhost:5000/api/appointments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <patient-token>" \
+  -d '{"doctor_id":1,"slot_label":"Tue, Apr 28 · 09:00–10:00","slot_time":"2026-04-28T09:00:00"}'
+
+# Doctor approves an appointment
+curl -X PATCH http://localhost:5000/api/appointments/3/status \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <doctor-token>" \
+  -d '{"status":"approved"}'
+```
+
+---
+
+## Common Errors
+
+### `401 Unauthorized`
+- `Authorization` header missing or token expired
+- Token signed with wrong `JWT_SECRET` (check `.env`)
 
 ```js
-// Temporary — remove after debugging
-app.use((req, res, next) => {
-  console.log(`[${req.method}] ${req.path}`, {
-    body:    req.body,
-    params:  req.params,
-    query:   req.query,
-    headers: req.headers['content-type'],
-  });
+// src/middleware/auth.js — verify logs the error
+jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+  if (err) return res.status(401).json({ error: 'Invalid token' });
+  req.user = decoded;
   next();
 });
 ```
 
----
+### `403 Forbidden`
+- Correct token, wrong role — e.g. patient hitting a doctor-only route
+- Check `requireRole('doctor')` is on the right route in `src/routes/`
 
-## Common API Errors
-
-### `404 Cannot GET /api/patients`
-- Route not registered in `server.js`
-- Prefix mismatch: route file uses `/` but mounted as `/api/patients/:id`
-- HTTP method mismatch (GET vs POST)
-
-```js
-// Check
-app.use('/api/patients', require('./src/routes/patients.routes'));
-router.get('/:id', controller.getById);  // maps to GET /api/patients/:id
-```
+### `404 Cannot GET /api/doctors`
+- Route not mounted in `server.js`
+- Prefix mismatch: route file uses `/available` but mounted path doesn't match
 
 ### `400 Bad Request` (unexpected)
-- Validation middleware rejecting a field that should be optional
-- `req.body` is empty → `express.json()` middleware missing
-- Sending `Content-Type: text/plain` instead of `application/json`
+- `req.body` is `{}` → `express.json()` missing or `Content-Type` not set
+- Required field absent — check controller validation at top of function
 
-```js
-// Verify express.json() is registered before routes
-app.use(express.json());
-```
-
-### `500 Internal Server Error` with no detail
-- Unhandled error not forwarded via `next(err)`
-- Global error handler not reached (middleware order wrong)
-
-```js
-// Global error handler must be last
-app.use('/api/...', routes);
-app.use((err, req, res, next) => {   // ← must come after all routes
-  console.error(err);
-  res.status(err.status || 500).json({ error: err.message });
-});
-```
-
-### Response body is `{}` or missing fields
-- Controller sending `res.json(result)` where `result` is undefined
-- `RETURNING *` missing from INSERT query → `rows[0]` is undefined
-
-```js
-// Debug: log before sending
-console.log('[controller] about to send:', result);
-res.status(201).json({ data: result });
-```
+### `500 Internal Server Error`
+- Unhandled promise rejection — missing `try/catch` in controller
+- `req.user.profile_id` is undefined — token was issued before `profile_id` was added; user must re-login
 
 ---
 
-## Testing Endpoints Manually
+## Debug Logging
 
-```bash
-# GET with query params
-curl "http://localhost:3000/api/appointments?doctor_id=2&status=scheduled"
+Add temporarily at the top of a controller:
 
-# POST with JSON body
-curl -X POST http://localhost:3000/api/appointments \
-  -H "Content-Type: application/json" \
-  -d '{"patient_id": 1, "doctor_id": 2, "scheduled_at": "2024-06-01T10:00:00Z"}'
-
-# PATCH
-curl -X PATCH http://localhost:3000/api/patients/5 \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "+91-9876543210"}'
+```js
+console.log('[bookAppointment] user:', req.user);
+console.log('[bookAppointment] body:', req.body);
 ```
+
+Structured format: `[controllerName] message`, then the relevant data.
 
 ---
 
-## Middleware Order Debugging
+## Middleware Order
 
-Express runs middleware in registration order. If something is blocked:
+Express runs middleware in registration order. If a route is blocked:
 
 ```js
-// Log which middleware runs
-function trace(name) {
-  return (req, res, next) => { console.log('MIDDLEWARE:', name); next(); };
-}
+// Correct order
+router.post('/', requireAuth, requireRole('patient'), ctrl.bookAppointment);
 
-router.post('/', trace('validate'), validate(schema), trace('controller'), controller.create);
+// Common mistake — role check before auth sets req.user
+router.post('/', requireRole('patient'), requireAuth, ctrl.bookAppointment);
+// → req.user is undefined inside requireRole → crashes
 ```
 
 ---
 
 ## Rules
+
 - Never suppress errors with empty `catch {}` blocks
-- Always `next(err)` in async controllers — don't swallow and send 500 inline
-- Validate `Content-Type` header when debugging empty `req.body`
-- Use `curl` or Postman to isolate whether the issue is client-side or server-side
+- Always use `try/catch` in async controllers — unhandled rejections crash the request
+- Validate `Content-Type: application/json` when `req.body` is empty
+- Use `curl` or Postman to confirm the issue is server-side before debugging React

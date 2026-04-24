@@ -1,133 +1,130 @@
 # Skill: Database Indexing
 
 ## Purpose
-Define indexing strategy for the Hospital Management System to keep queries fast.
+Define the indexing strategy for MediCore's four core tables.
 
 ---
 
-## Core Tables & Index Strategy
+## Schema Overview
+
+```
+users         → id, name, email, password_hash, role, created_at
+patients      → id, user_id (FK), dob, gender, phone
+doctors       → id, user_id (FK), specialization, phone, is_available, available_slots (JSONB)
+appointments  → id, patient_id (FK), doctor_id (FK), slot_label, slot_time, status, created_at
+```
+
+---
+
+## Index Strategy per Table
+
+### `users`
+```sql
+-- email is UNIQUE — already indexed automatically
+-- role filter (e.g. WHERE role = 'doctor') — low cardinality, skip unless table grows large
+```
 
 ### `patients`
 ```sql
--- Primary key (auto-indexed)
--- Search by name (partial match)
-CREATE INDEX idx_patients_last_name  ON patients (last_name);
-CREATE INDEX idx_patients_phone      ON patients (phone);
+-- FK — always index
+CREATE INDEX idx_patients_user_id ON patients (user_id);
 ```
 
 ### `doctors`
 ```sql
--- Filter by specialization
+-- FK
+CREATE INDEX idx_doctors_user_id ON doctors (user_id);
+
+-- Filter available doctors (common patient-facing query)
+CREATE INDEX idx_doctors_is_available ON doctors (is_available) WHERE is_available = TRUE;
+
+-- Filter by specialization (if search is added later)
 CREATE INDEX idx_doctors_specialization ON doctors (specialization);
--- Filter active doctors
-CREATE INDEX idx_doctors_is_active      ON doctors (is_active) WHERE is_active = TRUE;
 ```
 
 ### `appointments`
 ```sql
--- Most common lookups
-CREATE INDEX idx_appointments_patient_id    ON appointments (patient_id);
-CREATE INDEX idx_appointments_doctor_id     ON appointments (doctor_id);
-CREATE INDEX idx_appointments_scheduled_at  ON appointments (scheduled_at);
-CREATE INDEX idx_appointments_status        ON appointments (status);
+-- FK — both sides are queried frequently
+CREATE INDEX idx_appointments_patient_id ON appointments (patient_id);
+CREATE INDEX idx_appointments_doctor_id  ON appointments (doctor_id);
 
--- Conflict check query (doctor + time range)
-CREATE INDEX idx_appointments_doctor_time
-  ON appointments (doctor_id, scheduled_at)
-  WHERE status != 'cancelled';
-```
+-- Status filter (pending/approved/rejected tabs)
+CREATE INDEX idx_appointments_status ON appointments (status);
 
-### `medical_records`
-```sql
--- Lookup records by appointment
-CREATE INDEX idx_records_appointment_id ON medical_records (appointment_id);
--- Lookup records by patient (via join optimization)
-CREATE INDEX idx_records_created_at ON medical_records (created_at DESC);
+-- Chronological ordering
+CREATE INDEX idx_appointments_slot_time ON appointments (slot_time DESC);
+
+-- Doctor dashboard: filter by doctor + status together
+CREATE INDEX idx_appointments_doctor_status ON appointments (doctor_id, status);
 ```
 
 ---
 
 ## When to Add an Index
 
-Add an index when:
-- A column is used in `WHERE`, `JOIN ON`, or `ORDER BY` in frequent queries
-- A column has high cardinality (many distinct values): IDs, timestamps, names
-- Query plans (via `EXPLAIN ANALYZE`) show a sequential scan on a large table
+Add when:
+- A column appears in `WHERE`, `JOIN ON`, or `ORDER BY` in frequent queries
+- `EXPLAIN ANALYZE` shows a `Seq Scan` on a growing table
 
-Skip indexes on:
-- Boolean columns with low cardinality (unless partial index)
-- Columns only written to (never filtered/sorted on)
-- Small tables (< 1000 rows) — sequential scan is faster
+Skip when:
+- The table has fewer than ~1 000 rows (sequential scan is faster)
+- The column is write-only (never filtered or sorted)
 
 ---
 
 ## Partial Indexes
 
-Use when only a subset of rows is queried frequently:
+Use when only a subset of rows is typically queried:
 
 ```sql
--- Only index active doctors
-CREATE INDEX idx_doctors_active ON doctors (id) WHERE is_active = TRUE;
+-- Only available doctors (saves space, faster for patient browse)
+CREATE INDEX idx_doctors_available ON doctors (id) WHERE is_available = TRUE;
 
--- Only non-cancelled appointments
-CREATE INDEX idx_appts_active ON appointments (doctor_id, scheduled_at)
-  WHERE status != 'cancelled';
-```
-
----
-
-## Composite Indexes
-
-Column order matters — put the most selective / equality-matched column first:
-
-```sql
--- Good for: WHERE doctor_id = $1 AND scheduled_at BETWEEN $2 AND $3
-CREATE INDEX idx_appts_doctor_time ON appointments (doctor_id, scheduled_at);
-
--- Bad for: WHERE scheduled_at = $1 (doctor_id not used → index skipped)
+-- Only pending appointments (doctor action queue)
+CREATE INDEX idx_appointments_pending ON appointments (doctor_id) WHERE status = 'pending';
 ```
 
 ---
 
 ## EXPLAIN ANALYZE Workflow
 
-Run this before and after adding an index to measure impact:
-
 ```sql
+-- Run before and after adding an index
 EXPLAIN ANALYZE
-SELECT * FROM appointments
-WHERE doctor_id = 3
-  AND scheduled_at BETWEEN '2024-01-01' AND '2024-12-31'
-  AND status != 'cancelled';
+SELECT a.*, u.name AS patient_name
+FROM appointments a
+JOIN patients p ON p.id = a.patient_id
+JOIN users    u ON u.id = p.user_id
+WHERE a.doctor_id = 2 AND a.status = 'pending';
 ```
 
 Look for:
-- `Seq Scan` on large tables → candidate for indexing
-- `Index Scan` or `Bitmap Index Scan` → index is being used
-- High actual rows vs estimated rows → stale statistics → run `ANALYZE`
+- `Seq Scan` on `appointments` → add `idx_appointments_doctor_status`
+- High actual rows vs estimated → run `ANALYZE appointments`
 
 ---
 
 ## Maintenance
 
 ```sql
--- Rebuild bloated indexes after bulk deletes/updates
-REINDEX INDEX idx_appointments_doctor_time;
-
--- Update planner statistics
-ANALYZE appointments;
-
--- Check index usage (unused indexes waste write performance)
+-- Check which indexes are actually being used
 SELECT indexrelname, idx_scan
 FROM pg_stat_user_indexes
 WHERE schemaname = 'public'
 ORDER BY idx_scan ASC;
+
+-- Rebuild a bloated index
+REINDEX INDEX idx_appointments_doctor_status;
+
+-- Refresh planner statistics
+ANALYZE appointments;
 ```
 
 ---
 
 ## Rules
-- All foreign key columns must have an index
-- Do not add indexes speculatively — profile first with `EXPLAIN ANALYZE`
-- Document every non-obvious index with a comment in `sql/schema.sql`
-- Unused indexes (0 scans in production) should be dropped
+
+- All foreign key columns (`user_id`, `patient_id`, `doctor_id`) must have an index
+- Don't index `available_slots` (JSONB) — it's read as a whole, not filtered in SQL
+- Document non-obvious indexes with a comment in `sql/schema.sql`
+- Drop indexes with 0 scans in production — they slow down writes for no benefit
