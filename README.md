@@ -50,25 +50,65 @@ client/
 ## Getting Started
 
 ### Prerequisites
-- Node.js
-- PostgreSQL
+
+- **Node.js** v18 or higher
+- **PostgreSQL** v14 or higher
+- npm v9 or higher
 
 ### Installation
 
-1. Clone the repository
-2. Install backend dependencies: `npm install`
-3. Install frontend dependencies: `cd client && npm install`
-4. Set up PostgreSQL and run the schema: `sql/schema.sql`
-5. Configure database connection in `src/config/db.js`
+**1. Clone the repository**
+```bash
+git clone <repo-url>
+cd hospital-management
+```
+
+**2. Install dependencies**
+```bash
+# Backend
+npm install
+
+# Frontend
+cd client && npm install && cd ..
+```
+
+**3. Set up environment variables**
+
+Create a `.env` file in the project root:
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=hospital_db
+DB_USER=hospital_user
+DB_PASSWORD=your_password
+
+PORT=3000
+JWT_SECRET=your_jwt_secret_key
+```
+
+**4. Set up the database**
+
+Create the database and user in PostgreSQL, then run the schema:
+```bash
+psql -U postgres -c "CREATE DATABASE hospital_db;"
+psql -U postgres -c "CREATE USER hospital_user WITH PASSWORD 'your_password';"
+psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE hospital_db TO hospital_user;"
+psql -U hospital_user -d hospital_db -f sql/schema.sql
+```
+
+**5. (Optional) Seed the database**
+```bash
+node sql/seed.js
+```
 
 ### Running the Application
 
-**Backend**:
+**Backend** (runs on `http://localhost:3000`):
 ```bash
 npm start
 ```
 
-**Frontend** (in another terminal):
+**Frontend** (runs on `http://localhost:5173`, in a separate terminal):
 ```bash
 cd client
 npm run dev
