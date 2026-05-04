@@ -40,6 +40,9 @@ Thumbs.db
 # Testing
 coverage/
 
+# Seed data (contains hardcoded credentials)
+sql/seed.js
+
 # Misc
 .npm
 .eslintcache

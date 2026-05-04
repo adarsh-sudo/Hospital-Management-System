@@ -1,6 +1,6 @@
 # Hospital Management System
 
-**Hospital Management System** is a full-stack web application built with Node.js/Express backend and React frontend, connected to a PostgreSQL database. It enables hospitals to manage core operations including patient registration, doctor profiles organized by departments, appointment scheduling between patients and doctors, and comprehensive medical records with diagnoses and clinical notes per appointment. The system uses raw SQL queries for database operations and includes user authentication for secure access.
+**Hospital Management System** is a full-stack web application built with Node.js/Express backend and React frontend, connected to a PostgreSQL database. It provides a role-based portal for patients and doctors: patients can browse available doctors and book appointment slots, while doctors manage their availability and approve or reject incoming appointment requests.
 
 ## Tech Stack
 
@@ -10,41 +10,49 @@
 
 ## Core Features
 
-- **User Authentication**: Secure login and registration
-- **Patient Management**: Register and manage patient profiles
-- **Doctor Management**: Manage doctor profiles organized by departments
-- **Appointments**: Schedule and track appointments between patients and doctors
-- **Medical Records**: Store diagnosis and clinical notes per appointment
-- **Department Organization**: Organize doctors by departments
+- **Role-based Authentication**: Separate registration and login flows for patients and doctors
+- **Patient Portal**: Browse available doctors, book specific time slots, view booking status
+- **Doctor Portal**: Set availability slots, view incoming appointment requests, approve or reject them
+- **Appointment Workflow**: Appointments move through `pending` → `approved` / `rejected` states
 
 ## Database Schema
 
-The system uses 6 core tables:
-- `users` - User authentication
-- `patients` - Patient information
-- `doctors` - Doctor profiles linked to departments
-- `departments` - Hospital departments
-- `appointments` - Links patients and doctors
-- `medical_records` - Diagnosis and notes per appointment
+The system uses 4 tables:
+- `users` - Authentication and role (`patient` or `doctor`)
+- `patients` - Patient profile linked to a user account
+- `doctors` - Doctor profile with JSONB availability slots and active-status flag
+- `appointments` - Booking of a specific slot between a patient and doctor, with status tracking
 
 ## Project Structure
 
 ```
+server.js              # Express entry point
+
 src/
-  ├── config/         # Database configuration
-  ├── controllers/    # Request/response logic
-  ├── db/            # Raw SQL queries
-  ├── middleware/    # Authentication middleware
-  └── routes/        # API route definitions
+  ├── config/          # Database connection
+  ├── controllers/     # Request/response logic
+  ├── db/              # Raw SQL queries
+  ├── middleware/      # JWT auth and role guards
+  └── routes/          # API route definitions
+
+sql/
+  ├── schema.sql       # Table definitions
+  └── seed.js          # Optional seed data
 
 client/
   ├── src/
-  │   ├── components/  # React components (forms, tables, layouts)
-  │   ├── pages/      # Page components
-  │   ├── services/   # API service layers
-  │   ├── hooks/      # Custom React hooks
-  │   └── utils/      # Utility functions
-  └── public/         # Static assets
+  │   ├── components/
+  │   │   ├── forms/   # Form components
+  │   │   ├── tables/  # Table components
+  │   │   ├── layout/  # Navbar, Sidebar, PageWrapper
+  │   │   └── ui/      # Reusable primitives (Button, Input, Modal, Badge, Select, Spinner)
+  │   ├── pages/
+  │   │   ├── patient/ # Patient-specific pages (doctors list, bookings)
+  │   │   └── doctor/  # Doctor-specific pages (dashboard, availability)
+  │   ├── services/    # API service layers
+  │   ├── hooks/       # Custom React hooks
+  │   └── utils/       # Auth helpers and utilities
+  └── public/          # Static assets
 ```
 
 ## Getting Started
