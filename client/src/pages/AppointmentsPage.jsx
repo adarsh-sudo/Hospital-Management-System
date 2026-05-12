@@ -11,7 +11,6 @@ export default function AppointmentsPage() {
   const { appointments, loading, error, add, edit, remove } = useAppointments();
   const [patients,    setPatients]    = useState([]);
   const [doctors,     setDoctors]     = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [modal,       setModal]       = useState(null);
   const [selected,    setSelected]    = useState(null);
   const [searchTerm,  setSearchTerm]  = useState('');
@@ -28,7 +27,6 @@ export default function AppointmentsPage() {
   useEffect(() => {
     fetch('/api/patients', { headers: authHeaders() }).then(r    => r.json()).then(setPatients).catch(() => {});
     fetch('/api/doctors', { headers: authHeaders() }).then(r     => r.json()).then(setDoctors).catch(() => {});
-    fetch('/api/departments', { headers: authHeaders() }).then(r => r.json()).then(setDepartments).catch(() => {});
   }, []);
 
   const openAdd  = () => { setSelected(null); setModal('add'); };
@@ -65,10 +63,10 @@ export default function AppointmentsPage() {
           }}
         />
       </div>
-      <AppointmentTable appointments={filteredAppointments} loading={loading} error={error} patients={patients} doctors={doctors} departments={departments} onEdit={openEdit} onDelete={handleDelete} userRole={getUserRole()} />
+      <AppointmentTable appointments={filteredAppointments} loading={loading} error={error} patients={patients} doctors={doctors} onEdit={openEdit} onDelete={handleDelete} userRole={getUserRole()} />
       {modal && (
         <Modal title={modal === 'add' ? 'Book Appointment' : 'Edit Appointment'} onClose={close}>
-          <AppointmentForm initial={selected || undefined} patients={patients} doctors={doctors} departments={departments} onSubmit={handleSubmit} onCancel={close} userRole={getUserRole()} />
+          <AppointmentForm initial={selected || undefined} patients={patients} doctors={doctors} onSubmit={handleSubmit} onCancel={close} userRole={getUserRole()} />
         </Modal>
       )}
     </PageWrapper>

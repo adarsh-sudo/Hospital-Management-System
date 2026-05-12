@@ -26,14 +26,13 @@ const tdStyle = {
   fontSize: '0.875rem',
 };
 
-export default function AppointmentTable({ appointments, loading, error, patients = [], doctors = [], departments = [], onEdit, onDelete, userRole }) {
+export default function AppointmentTable({ appointments, loading, error, patients = [], doctors = [], onEdit, onDelete, userRole }) {
   if (loading) return <Spinner size="lg" />;
   if (error)   return <p style={{ textAlign:'center', padding:'4rem', color:'#fb7185', fontSize:'0.875rem' }}>{error}</p>;
   if (!appointments.length) return <p style={{ textAlign:'center', padding:'4rem', color:'rgba(255,255,255,0.3)', fontSize:'0.875rem' }}>No appointments found.</p>;
 
   const patientMap  = Object.fromEntries(patients.map(p => [p.id, p.name]));
-  const deptMap     = Object.fromEntries(departments.map(d => [d.id, d.name]));
-  const doctorLabel = d => d.department_id ? `${d.name} — ${deptMap[d.department_id] || ''}` : d.name;
+  const doctorLabel = d => d.name;
   const doctorMap   = Object.fromEntries(doctors.map(d => [d.id, doctorLabel(d)]));
 
   const isClerk  = userRole === 'clerk';

@@ -9,7 +9,6 @@ import PageWrapper from '../components/layout/PageWrapper';
 
 export default function DoctorsPage() {
   const { doctors, loading, error, add, edit, remove } = useDoctors();
-  const [departments, setDepartments] = useState([]);
   const [modal, setModal]             = useState(null);
   const [selected, setSelected]       = useState(null);
   const [searchTerm, setSearchTerm]   = useState('');
@@ -17,10 +16,6 @@ export default function DoctorsPage() {
   const filteredDoctors = doctors.filter(d =>
     d.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  useEffect(() => {
-    fetch('/api/departments', { headers: authHeaders() }).then(r => r.json()).then(setDepartments).catch(() => {});
-  }, []);
 
   const openAdd  = () => { setSelected(null); setModal('add'); };
   const openEdit = (d) => { setSelected(d);   setModal('edit'); };
@@ -61,7 +56,7 @@ export default function DoctorsPage() {
       <DoctorTable doctors={filteredDoctors} loading={loading} error={error} onEdit={openEdit} onDelete={handleDelete} userRole={role} />
       {modal && (
         <Modal title={modal === 'add' ? 'Add Doctor' : 'Edit Doctor'} onClose={close}>
-          <DoctorForm initial={selected || undefined} departments={departments} onSubmit={handleSubmit} onCancel={close} userRole={getUserRole()} />
+          <DoctorForm initial={selected || undefined} onSubmit={handleSubmit} onCancel={close} userRole={getUserRole()} />
         </Modal>
       )}
     </PageWrapper>
