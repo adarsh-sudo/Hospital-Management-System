@@ -48,7 +48,6 @@ Forms to build:
 - `PatientForm.jsx` — create / edit a patient
 - `DoctorForm.jsx` — create / edit a doctor
 - `AppointmentForm.jsx` — book an appointment (doctor + patient dropdowns + datetime)
-- `MedicalRecordForm.jsx` — add diagnosis notes to an appointment
 
 ---
 
@@ -60,7 +59,6 @@ Tables to build:
 - `PatientTable.jsx`
 - `DoctorTable.jsx`
 - `AppointmentTable.jsx` — include status badge per row
-- `MedicalRecordTable.jsx`
 
 ---
 
@@ -89,7 +87,7 @@ One file per route. Composes components only — no logic beyond modal open/clos
 
 One hook per domain. Owns fetching, pagination state, and refetch.
 
-Hooks to build: `usePatients`, `useDoctors`, `useAppointments`, `useMedicalRecords`
+Hooks to build: `usePatients`, `useDoctors`, `useAppointments`
 
 ---
 
@@ -98,7 +96,7 @@ Hooks to build: `usePatients`, `useDoctors`, `useAppointments`, `useMedicalRecor
 Pure async functions — no React, no state. One file per domain.
 Each service covers: getAll, getById, create, update, remove.
 
-Services to build: `patient.service.js`, `doctor.service.js`, `appointment.service.js`, `medicalRecord.service.js`
+Services to build: `patient.service.js`, `doctor.service.js`, `appointment.service.js`
 
 ---
 

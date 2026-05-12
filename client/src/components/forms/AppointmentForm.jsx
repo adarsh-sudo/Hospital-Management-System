@@ -11,7 +11,7 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-export default function AppointmentForm({ initial = empty, patients = [], doctors = [], departments = [], onSubmit, onCancel, userRole }) {
+export default function AppointmentForm({ initial = empty, patients = [], doctors = [], onSubmit, onCancel, userRole }) {
   const [form, setForm]           = useState(initial);
   const [errors, setErrors]       = useState({});
   const [submitErr, setSubmitErr] = useState('');
@@ -42,13 +42,10 @@ export default function AppointmentForm({ initial = empty, patients = [], doctor
     }
   };
 
-  const deptMap        = Object.fromEntries(departments.map((d) => [d.id, d.name]));
   const patientOptions = patients.map((p) => ({ value: p.id, label: p.name }));
   const doctorOptions  = doctors.map((d) => ({
     value: d.id,
-    label: d.department_id
-      ? `${d.name} — ${deptMap[d.department_id] || 'Unknown Dept'}`
-      : d.name,
+    label: d.name,
   }));
 
   return (
